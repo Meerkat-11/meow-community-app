@@ -25,8 +25,7 @@ const state = {
   profileFilter: 'mine',
   authUserId: getStorage(STORAGE_KEYS.auth, null),
   modal: null,
-  settings: getStorage(STORAGE_KEYS.settings, DEFAULT_SETTINGS),
-  pendingSort: null
+  settings: getStorage(STORAGE_KEYS.settings, DEFAULT_SETTINGS)
 };
 
 function makeId(prefix) {
@@ -351,18 +350,6 @@ function getPostById(id) {
   return getPosts().find((post) => post.id === id) || null;
 }
 
-function openPost(postId) {
-  const posts = getPosts();
-  const postIndex = posts.findIndex((post) => post.id === postId);
-  if (postIndex === -1) return;
-  posts[postIndex].views = (posts[postIndex].views || 0) + 1;
-  savePosts(posts);
-  state.selectedPostId = postId;
-  state.screen = 'app';
-  state.tab = 'board';
-  render();
-}
-
 function getUserById(id) {
   return getUsers().find((user) => user.id === id) || null;
 }
@@ -383,51 +370,6 @@ function getFilteredPosts() {
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function render() {
-  document.body.classList.toggle('dark-mode', !!state.settings.darkMode);
-
-  if (state.screen === 'landing') {
-    document.getElementById('app').innerHTML = renderLanding();
-    return;
-  }
-
-  if (state.screen === 'login') {
-    document.getElementById('app').innerHTML = renderLogin();
-    return;
-  }
-
-  if (state.screen === 'signup') {
-    document.getElementById('app').innerHTML = renderSignup();
-    return;
-  }
-
-  if (state.screen === 'settings') {
-    document.getElementById('app').innerHTML = renderAppLayout(renderSettings());
-    return;
-  }
-
-  if (state.screen === 'admin') {
-    document.getElementById('app').innerHTML = renderAppLayout(renderAdmin());
-    return;
-  }
-
-  if (state.selectedPostId) {
-    document.getElementById('app').innerHTML = renderAppLayout(renderPostDetail(state.selectedPostId));
-    return;
-  }
-
-  const currentUser = getCurrentUser();
-  const tabContentMap = {
-    home: renderHome(),
-    board: renderBoard(),
-    chat: renderChat(),
-    notify: renderNotifications(),
-    profile: renderProfile(currentUser)
-  };
-
-  document.getElementById('app').innerHTML = renderAppLayout(tabContentMap[state.tab] || renderHome());
-}
-
 function renderLanding() {
   return `
     <div class="landing-screen">
@@ -437,28 +379,6 @@ function renderLanding() {
         <p class="subtitle">「고양이를 사랑하는 사람들이 모이는 공간」</p>
         <button class="primary-btn" data-action="enter-app" style="width:100%;">입장하기</button>
       </div>
-    </div>
-  `;
-}
-
-function renderAppLayout(content) {
-  const currentUser = getCurrentUser();
-  const unread = getUnreadNotificationsCount();
-
-  return `
-    <div class="mobile-shell">
-      <header class="app-header">
-        <div class="header-title">${APP_NAME}</div>
-        <div class="header-actions">
-          ${currentUser ? `<button class="small-btn" data-action="go-settings">설정</button>` : `<button class="small-btn" data-action="go-login">로그인</button>`}
-        </div>
-      </header>
-      <main class="app-body">
-        ${content}
-      </main>
-      <nav class="bottom-nav">
-        ${['home', 'board', 'chat', 'notify', 'profile'].map((tab) => renderNavItem(tab, unread)).join('')}
-      </nav>
     </div>
   `;
 }
@@ -484,6 +404,49 @@ function renderNavItem(tab, unreadCount) {
   `;
 }
 
+function renderAppLayout(content) {
+  const currentUser = getCurrentUser();
+  const unread = getUnreadNotificationsCount();
+
+  return `
+    <div class="mobile-shell">
+      <header class="app-header">
+        <div class="header-title">${APP_NAME}</div>
+        <div class="header-actions">
+          ${currentUser ? `<button class="small-btn" data-action="go-settings">설정</button>` : `<button class="small-btn" data-action="go-login">로그인</button>`}
+        </div>
+      </header>
+      <main class="app-body">
+        ${content}
+      </main>
+      <nav class="bottom-nav">
+        ${['home', 'board', 'chat', 'notify', 'profile'].map((tab) => renderNavItem(tab, unread)).join('')}
+      </nav>
+    </div>
+  `;
+}
+
+function renderPostCard(post) {
+  const author = getUserById(post.authorId);
+  const summary = post.content.length > 90 ? `${post.content.slice(0, 90)}...` : post.content;
+
+  return `
+    <div class="post-card" data-action="open-post" data-post-id="${post.id}">
+      <h4>${escapeHtml(post.title)}</h4>
+      <div class="post-meta">
+        <span>${escapeHtml(author ? author.nickname : '익명')}</span>
+        <span>${formatKoreanTime(post.createdAt)}</span>
+      </div>
+      <div class="post-summary">${escapeHtml(summary)}</div>
+      <div class="inline-stats">
+        <span>👁️ ${post.views || 0}</span>
+        <span>❤️ ${post.likedBy ? post.likedBy.length : 0}</span>
+        <span>💬 ${post.comments ? post.comments.length : 0}</span>
+      </div>
+    </div>
+  `;
+}
+
 function renderHome() {
   const posts = getPosts().slice().sort((a, b) => (b.likedBy?.length || 0) - (a.likedBy?.length || 0));
   const recent = getPosts().slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 4);
@@ -506,7 +469,7 @@ function renderHome() {
           <button class="ghost-btn" data-action="switch-tab" data-tab="board">더보기</button>
         </div>
         <div class="post-list">
-          ${posts.slice(0, 3).map((post) => renderPostCard(post, true)).join('')}
+          ${posts.slice(0, 3).map((post) => renderPostCard(post)).join('')}
         </div>
       </div>
 
@@ -515,7 +478,7 @@ function renderHome() {
           <span>최근 게시글</span>
         </div>
         <div class="post-list">
-          ${recent.map((post) => renderPostCard(post, true)).join('')}
+          ${recent.map((post) => renderPostCard(post)).join('')}
         </div>
       </div>
 
@@ -585,28 +548,7 @@ function renderBoard() {
       </div>
 
       <div class="post-list">
-        ${posts.length ? posts.map((post) => renderPostCard(post, false)).join('') : `<div class="empty-box">검색 결과가 없어요. 다른 키워드로 다시 찾아보세요.</div>`}
-      </div>
-    </div>
-  `;
-}
-
-function renderPostCard(post, compact) {
-  const author = getUserById(post.authorId);
-  const summary = post.content.length > 90 ? `${post.content.slice(0, 90)}...` : post.content;
-
-  return `
-    <div class="post-card" data-action="open-post" data-post-id="${post.id}">
-      <h4>${escapeHtml(post.title)}</h4>
-      <div class="post-meta">
-        <span>${escapeHtml(author ? author.nickname : '익명')}</span>
-        <span>${formatKoreanTime(post.createdAt)}</span>
-      </div>
-      <div class="post-summary">${escapeHtml(summary)}</div>
-      <div class="inline-stats">
-        <span>👁️ ${post.views || 0}</span>
-        <span>❤️ ${post.likedBy ? post.likedBy.length : 0}</span>
-        <span>💬 ${post.comments ? post.comments.length : 0}</span>
+        ${posts.length ? posts.map((post) => renderPostCard(post)).join('') : `<div class="empty-box">검색 결과가 없어요. 다른 키워드로 다시 찾아보세요.</div>`}
       </div>
     </div>
   `;
@@ -674,10 +616,8 @@ function renderPostDetail(postId) {
 
 function renderChat() {
   const currentUser = getCurrentUser();
-  const chats = getChats().filter((chat) => chat.participants.includes(currentUser?.id || '')); 
+  const chats = getChats().filter((chat) => chat.participants.includes(currentUser?.id || ''));
   const selectedChat = chats.find((chat) => chat.id === state.selectedChatId) || chats[0] || null;
-  const partnerId = selectedChat ? selectedChat.participants.find((id) => id !== currentUser?.id) : null;
-  const partner = partnerId ? getUserById(partnerId) : null;
 
   return `
     <div class="screen">
@@ -748,6 +688,16 @@ function renderNotifications() {
   `;
 }
 
+function renderProfilePostItem(post) {
+  const author = getUserById(post.authorId);
+  return `
+    <div class="notice-item" data-action="open-post" data-post-id="${post.id}">
+      <strong>${escapeHtml(post.title)}</strong>
+      <p>${escapeHtml(author ? author.nickname : '익명')} · ${formatKoreanTime(post.createdAt)}</p>
+    </div>
+  `;
+}
+
 function renderProfile(currentUser) {
   if (!currentUser) {
     return `
@@ -796,22 +746,12 @@ function renderProfile(currentUser) {
         <button data-action="show-my-posts">내 게시글</button>
         <button data-action="show-liked-posts">좋아요한 게시글</button>
         <button data-action="go-settings">설정</button>
-        ${currentUser.role === 'admin' ? `<button data-action="go-admin">관리자</button>` : ''}
+        ${currentUser.role === 'admin' ? '<button data-action="go-admin">관리자</button>' : ''}
       </div>
 
       <div class="notice-list">
         ${state.profileFilter === 'mine' ? posts.map((post) => renderProfilePostItem(post)).join('') : likedPosts.map((post) => renderProfilePostItem(post)).join('')}
       </div>
-    </div>
-  `;
-}
-
-function renderProfilePostItem(post) {
-  const author = getUserById(post.authorId);
-  return `
-    <div class="notice-item" data-action="open-post" data-post-id="${post.id}">
-      <strong>${escapeHtml(post.title)}</strong>
-      <p>${escapeHtml(author ? author.nickname : '익명')} · ${formatKoreanTime(post.createdAt)}</p>
     </div>
   `;
 }
@@ -846,7 +786,6 @@ function renderAdmin() {
 
   const posts = getPosts();
   const users = getUsers();
-  const notices = getNotices();
 
   return `
     <div class="screen">
@@ -978,6 +917,88 @@ function renderSignup() {
       </div>
     </div>
   `;
+}
+
+function renderModal() {
+  if (!state.modal) return '';
+
+  if (state.modal === 'post-create') {
+    return `
+      <div class="modal-overlay">
+        <div class="modal-panel">
+          <h3>게시글 작성</h3>
+          <form class="form-grid" data-role="post-form">
+            <div class="form-field">
+              <label>제목</label>
+              <input type="text" name="title" placeholder="제목을 입력하세요" required />
+            </div>
+            <div class="form-field">
+              <label>내용</label>
+              <textarea name="content" placeholder="내용을 입력하세요" required></textarea>
+            </div>
+            <div class="form-field">
+              <label>게시판 선택</label>
+              <select name="board">
+                <option value="자유게시판">자유게시판</option>
+                <option value="고양이 자랑">고양이 자랑</option>
+                <option value="사진게시판">사진게시판</option>
+                <option value="정보게시판">정보게시판</option>
+                <option value="질문게시판">질문게시판</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>이미지 선택</label>
+              <input type="file" accept="image/*" />
+            </div>
+            <div class="form-actions">
+              <button type="button" class="small-btn" data-action="close-modal">취소</button>
+              <button type="submit" class="primary-btn">등록</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.modal === 'profile-edit') {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return '';
+    return `
+      <div class="modal-overlay">
+        <div class="modal-panel">
+          <h3>프로필 수정</h3>
+          <form class="form-grid" data-role="profile-edit-form">
+            <div class="form-field">
+              <label>닉네임</label>
+              <input type="text" name="nickname" value="${escapeHtml(currentUser.nickname)}" required />
+            </div>
+            <div class="form-field">
+              <label>자기소개</label>
+              <textarea name="bio" placeholder="자기소개를 입력하세요">${escapeHtml(currentUser.bio || '')}</textarea>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="small-btn" data-action="close-modal">취소</button>
+              <button type="submit" class="primary-btn">저장</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  return '';
+}
+
+function openPost(postId) {
+  const posts = getPosts();
+  const postIndex = posts.findIndex((post) => post.id === postId);
+  if (postIndex === -1) return;
+  posts[postIndex].views = (posts[postIndex].views || 0) + 1;
+  savePosts(posts);
+  state.selectedPostId = postId;
+  state.screen = 'app';
+  state.tab = 'board';
+  render();
 }
 
 function handleLoginSubmit(event) {
@@ -1320,7 +1341,7 @@ function handleProfileEditSubmit(event) {
 function handleLogout() {
   state.authUserId = null;
   localStorage.removeItem(STORAGE_KEYS.auth);
-  state.screen = 'app';
+  state.screen = 'landing';
   state.tab = 'home';
   render();
 }
@@ -1392,6 +1413,51 @@ function handleClearReport(postId) {
   render();
 }
 
+function render() {
+  document.body.classList.toggle('dark-mode', !!state.settings.darkMode);
+
+  if (state.screen === 'landing') {
+    document.getElementById('app').innerHTML = renderLanding();
+    return;
+  }
+
+  if (state.screen === 'login') {
+    document.getElementById('app').innerHTML = renderLogin();
+    return;
+  }
+
+  if (state.screen === 'signup') {
+    document.getElementById('app').innerHTML = renderSignup();
+    return;
+  }
+
+  if (state.screen === 'settings') {
+    document.getElementById('app').innerHTML = renderAppLayout(renderSettings()) + renderModal();
+    return;
+  }
+
+  if (state.screen === 'admin') {
+    document.getElementById('app').innerHTML = renderAppLayout(renderAdmin()) + renderModal();
+    return;
+  }
+
+  if (state.selectedPostId) {
+    document.getElementById('app').innerHTML = renderAppLayout(renderPostDetail(state.selectedPostId)) + renderModal();
+    return;
+  }
+
+  const currentUser = getCurrentUser();
+  const tabContentMap = {
+    home: renderHome(),
+    board: renderBoard(),
+    chat: renderChat(),
+    notify: renderNotifications(),
+    profile: renderProfile(currentUser)
+  };
+
+  document.getElementById('app').innerHTML = renderAppLayout(tabContentMap[state.tab] || renderHome()) + renderModal();
+}
+
 function bindEvents() {
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-action]');
@@ -1443,9 +1509,7 @@ function bindEvents() {
         handleSetBoard(board);
         break;
       case 'open-post':
-        if (postId) {
-          openPost(postId);
-        }
+        if (postId) openPost(postId);
         break;
       case 'toggle-like':
         if (postId) handleLikeToggle(postId);
@@ -1504,6 +1568,12 @@ function bindEvents() {
       case 'clear-report':
         if (postId) handleClearReport(postId);
         break;
+      case 'close-modal':
+        state.modal = null;
+        render();
+        break;
+      default:
+        break;
     }
   });
 
@@ -1513,32 +1583,26 @@ function bindEvents() {
       handleLoginSubmit(event);
       return;
     }
-
     if (role === 'signup-form') {
       handleSignupSubmit(event);
       return;
     }
-
     if (role === 'post-form') {
       handleCreatePost(event);
       return;
     }
-
     if (role === 'comment-form') {
       handleCommentSubmit(event);
       return;
     }
-
     if (role === 'chat-form') {
       handleSendMessage(event);
       return;
     }
-
     if (role === 'admin-notice-form') {
       handleAdminNoticeSubmit(event);
       return;
     }
-
     if (role === 'profile-edit-form') {
       handleProfileEditSubmit(event);
     }
@@ -1558,191 +1622,20 @@ function bindEvents() {
   });
 }
 
-function renderModal() {
-  if (!state.modal) return '';
-
-  if (state.modal === 'post-create') {
-    const currentUser = getCurrentUser();
-    return `
-      <div class="modal-overlay">
-        <div class="modal-panel">
-          <h3>게시글 작성</h3>
-          <form class="form-grid" data-role="post-form">
-            <div class="form-field">
-              <label>제목</label>
-              <input type="text" name="title" placeholder="제목을 입력하세요" required />
-            </div>
-            <div class="form-field">
-              <label>내용</label>
-              <textarea name="content" placeholder="내용을 입력하세요" required></textarea>
-            </div>
-            <div class="form-field">
-              <label>게시판 선택</label>
-              <select name="board">
-                <option value="자유게시판">자유게시판</option>
-                <option value="고양이 자랑">고양이 자랑</option>
-                <option value="사진게시판">사진게시판</option>
-                <option value="정보게시판">정보게시판</option>
-                <option value="질문게시판">질문게시판</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label>이미지 선택</label>
-              <input type="file" accept="image/*" />
-            </div>
-            <div class="form-actions">
-              <button type="button" class="small-btn" data-action="close-modal">취소</button>
-              <button type="submit" class="primary-btn">등록</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    `;
+window.addEventListener('hashchange', () => {
+  const hash = window.location.hash;
+  if (hash.startsWith('#post-')) {
+    const postId = hash.replace('#post-', '');
+    if (postId) {
+      state.selectedPostId = postId;
+      state.tab = 'board';
+      render();
+    }
   }
-
-  if (state.modal === 'profile-edit') {
-    const currentUser = getCurrentUser();
-    if (!currentUser) return '';
-    return `
-      <div class="modal-overlay">
-        <div class="modal-panel">
-          <h3>프로필 수정</h3>
-          <form class="form-grid" data-role="profile-edit-form">
-            <div class="form-field">
-              <label>닉네임</label>
-              <input type="text" name="nickname" value="${escapeHtml(currentUser.nickname)}" required />
-            </div>
-            <div class="form-field">
-              <label>자기소개</label>
-              <textarea name="bio" placeholder="자기소개를 입력하세요">${escapeHtml(currentUser.bio || '')}</textarea>
-            </div>
-            <div class="form-actions">
-              <button type="button" class="small-btn" data-action="close-modal">취소</button>
-              <button type="submit" class="primary-btn">저장</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    `;
-  }
-
-  return '';
-}
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureSeedData();
   bindEvents();
   render();
 });
-
-document.addEventListener('click', (event) => {
-  const target = event.target.closest('[data-action="close-modal"]');
-  if (target) {
-    state.modal = null;
-    render();
-  }
-});
-
-window.addEventListener('hashchange', () => {
-  const hash = window.location.hash;
-  if (hash.startsWith('#post-')) {
-    const postId = hash.replace('#post-', '');
-    if (postId) {
-      state.selectedPostId = postId;
-      state.tab = 'board';
-      render();
-    }
-  }
-});
-
-function renderShellWithModal(content) {
-  return `${renderAppLayout(content)}${renderModal()}`;
-}
-
-function renderAppLayout(content) {
-  const currentUser = getCurrentUser();
-  const unread = getUnreadNotificationsCount();
-
-  return `
-    <div class="mobile-shell">
-      <header class="app-header">
-        <div class="header-title">${APP_NAME}</div>
-        <div class="header-actions">
-          ${currentUser ? `<button class="small-btn" data-action="go-settings">설정</button>` : `<button class="small-btn" data-action="go-login">로그인</button>`}
-        </div>
-      </header>
-      <main class="app-body">
-        ${content}
-      </main>
-      <nav class="bottom-nav">
-        ${['home', 'board', 'chat', 'notify', 'profile'].map((tab) => renderNavItem(tab, unread)).join('')}
-      </nav>
-    </div>
-  `;
-}
-
-function render() {
-  document.body.classList.toggle('dark-mode', !!state.settings.darkMode);
-
-  if (state.screen === 'landing') {
-    document.getElementById('app').innerHTML = renderLanding();
-    return;
-  }
-
-  if (state.screen === 'login') {
-    document.getElementById('app').innerHTML = renderLogin();
-    return;
-  }
-
-  if (state.screen === 'signup') {
-    document.getElementById('app').innerHTML = renderSignup();
-    return;
-  }
-
-  if (state.screen === 'settings') {
-    document.getElementById('app').innerHTML = renderAppLayout(renderSettings()) + renderModal();
-    return;
-  }
-
-  if (state.screen === 'admin') {
-    document.getElementById('app').innerHTML = renderAppLayout(renderAdmin()) + renderModal();
-    return;
-  }
-
-  if (state.selectedPostId) {
-    document.getElementById('app').innerHTML = renderAppLayout(renderPostDetail(state.selectedPostId)) + renderModal();
-    return;
-  }
-
-  const currentUser = getCurrentUser();
-  const tabContentMap = {
-    home: renderHome(),
-    board: renderBoard(),
-    chat: renderChat(),
-    notify: renderNotifications(),
-    profile: renderProfile(currentUser)
-  };
-
-  document.getElementById('app').innerHTML = renderAppLayout(tabContentMap[state.tab] || renderHome()) + renderModal();
-}
-
-window.addEventListener('hashchange', () => {
-  const hash = window.location.hash;
-  if (hash.startsWith('#post-')) {
-    const postId = hash.replace('#post-', '');
-    if (postId) {
-      state.selectedPostId = postId;
-      state.tab = 'board';
-      render();
-    }
-  }
-});
-
-if (!window.location.hash) {
-  document.addEventListener('DOMContentLoaded', () => {
-    ensureSeedData();
-    bindEvents();
-    render();
-  });
-}
-
